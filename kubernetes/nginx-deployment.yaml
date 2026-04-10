@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────
+# nginx-deployment.yaml — Nginx Deployment
+#
+# Runs 1 Nginx pod (no need for multiple — Nginx is stateless and fast).
+# Mounts the ConfigMap as nginx.conf.
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: traffic-lab
+  labels:
+    app: nginx
+
+spec:
+  replicas: 1   # One Nginx is enough for a lab
+
+  selector:
+    matchLabels:
+      app: nginx
+
+  template:
+    metadata:
+      labels:
+        app: nginx
+    
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          
+          ports:
+            - containerPort: 80
+          
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu:    "50m"
+            limits:
+              memory: "64Mi"
+              cpu:    "100m"
+          
+          volumeMounts:
+            # Mount the ConfigMap as a file at /etc/nginx/nginx.conf
+            - name: nginx-config-volume
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf   # Only mount this specific key, not the whole ConfigMap
+            
+            # Mount UI files (from another ConfigMap or emptyDir in real setup)
+            # For simplicity in this lab, we use a separate ConfigMap for UI
+            # or you can build a custom Nginx image with UI files baked in
+      
+      volumes:
+        - name: nginx-config-volume
+          configMap:
+            name: nginx-config   # References the ConfigMap we created above

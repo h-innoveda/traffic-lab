@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────────
+# loki/config.yaml — Loki log aggregation database configuration
+#
+# Loki is the log DATABASE. It receives logs from Promtail,
+# stores them, and answers queries from Grafana.
+#
+# KEY CONCEPT — How Loki differs from Elasticsearch:
+#   Elasticsearch: indexes EVERY word in every log line (expensive)
+#   Loki:          indexes only LABELS, stores log content compressed
+#
+#   This makes Loki:
+#     ✓ Much cheaper to run (less RAM, less disk)
+#     ✓ Fast for label-based queries: {app="traffic-lab", level="error"}
+#     ✗ Slower for full-text search (has to scan log content)
+#
+# QUERY LANGUAGE: LogQL (similar to PromQL)
+#   {app="traffic-lab"}                    → all logs from this app
+#   {app="traffic-lab"} | json | status=500 → only 500 errors
+#   rate({app="traffic-lab"}[1m])          → requests per minute
+# ─────────────────────────────────────────────────────────────────
+
+# ── AUTH ──────────────────────────────────────────────────────
+auth_enabled: false
+# Disable multi-tenancy auth for local development.
+# In production you'd enable this and pass X-Scope-OrgID headers.
+
+# ── SERVER ────────────────────────────────────────────────────
+server:
+  http_listen_port: 3100   # Grafana and Promtail connect to this port
+  grpc_listen_port: 9096   # Internal gRPC (used if you run Loki in cluster mode)
+  log_level: warn          # Only log warnings+ (info is very noisy)
+
+# ── COMMON SETTINGS ───────────────────────────────────────────
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki        # All data stored under /loki inside the container
+  
+  storage:
+    filesystem:
+      # WHERE log chunks are stored on disk.
+      # In Docker Compose, this maps to a named volume (loki_data).
+      # In production you'd use S3 or GCS here instead.
+      chunks_directory: /loki/chunks
+      rules_directory:  /loki/rules
+  
+  replication_factor: 1
+  # 1 = single instance (no replication). Fine for local dev.
+  # Production: 3 replicas for high availability.
+  
+  ring:
+    kvstore:
+      store: inmemory
+      # "inmemory" = use RAM for the ring (cluster membership).
+      # Single-node setup doesn't need etcd/consul.
+
+# ── QUERY RANGE ───────────────────────────────────────────────
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true      # Cache query results in RAM
+        max_size_mb: 100   # Use up to 100MB for query cache
+
+# ── SCHEMA CONFIG ─────────────────────────────────────────────
+# Schema defines HOW Loki stores and indexes data.
+# You can have multiple schema periods (for migrations).
+schema_config:
+  configs:
+    - from: 2024-01-01          # This schema applies from this date onwards
+      store: tsdb               # TSDB = time-series DB index (faster than boltdb)
+      object_store: filesystem  # Store chunks on local filesystem
+      schema: v13               # Schema version (v13 is current best practice)
+      index:
+        prefix: index_          # Prefix for index files on disk
+        period: 24h             # Create a new index file every 24 hours
+                                # Smaller period = faster deletes, more files
+
+# ── RULER (Alerting) ──────────────────────────────────────────
+ruler:
+  alertmanager_url: http://localhost:9093
+  # Where to send alerts. We don't have Alertmanager in this lab,
+  # but this prevents Loki from logging errors about missing config.
+
+# ── LIMITS ────────────────────────────────────────────────────
+# These limits prevent a single query from killing the server.
+limits_config:
+  # How far back you can query logs
+  # 168h = 7 days. Increase if you want longer retention.
+  retention_period: 168h
+  
+  # Max number of log lines returned per query
+  max_entries_limit_per_query: 5000
+  
+  # Allow queries to look back further than the default
+  reject_old_samples: false
+  reject_old_samples_max_age: 168h
+
+# ── COMPACTOR ─────────────────────────────────────────────────
+# The compactor merges small index files into larger ones
+# and handles log retention (deleting old logs).
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m      # Run compaction every 10 minutes
+  retention_enabled: true       # Enable automatic log deletion after retention_period
+  retention_delete_delay: 2h    # Wait 2h after retention expires before deleting
+  delete_request_store: filesystem

@@ -1,0 +1,157 @@
+# ─────────────────────────────────────────────────────────────────
+# docker-compose.yml — The master wiring file
+#
+# This file defines ALL services and how they connect.
+# One command starts everything: docker compose up --build
+#
+# SERVICE MAP:
+#   nginx (port 80) ──→ app-1, app-2, app-3 (port 5000 each)
+#   promtail ──────────→ reads /app/logs/*.log from app containers
+#   promtail ──────────→ pushes to loki:3100
+#   grafana (port 3000) → queries loki:3100
+#
+# NETWORKS:
+#   All services share "lab-network" — they can reach each other
+#   by service name (e.g., "loki", "app-1") instead of IP addresses.
+#   Docker's internal DNS resolves service names automatically.
+# ─────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+# ── NAMED VOLUMES ─────────────────────────────────────────────
+# Volumes persist data across container restarts.
+# Without volumes: restart Loki → all logs gone, restart Grafana → dashboards gone.
+volumes:
+  loki_data:      # Loki's log storage (chunks + index files)
+  grafana_data:   # Grafana's SQLite DB (users, settings, non-provisioned dashboards)
+  app_logs:       # Shared log directory: app containers write here, Promtail reads here
+
+# ── SHARED NETWORK ────────────────────────────────────────────
+networks:
+  lab-network:
+    driver: bridge
+    # bridge = virtual switch inside Docker host
+    # All containers on this network can talk to each other
+
+# ── SERVICES ──────────────────────────────────────────────────
+services:
+
+  # ── FLASK APP REPLICA 1 ─────────────────────────────────────
+  app-1:
+    build:
+      context: ./app          # Build from app/Dockerfile
+      dockerfile: Dockerfile
+    environment:
+      - REPLICA_ID=app-1      # This env var appears in every log line
+                              # Grafana uses it to show which replica handled each request
+    volumes:
+      - app_logs:/app/logs    # Mount shared volume so Promtail can read logs
+    networks:
+      - lab-network
+    restart: unless-stopped   # Auto-restart if container crashes
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s           # Check every 10 seconds
+      timeout: 5s             # Fail if no response in 5s
+      retries: 3              # Mark unhealthy after 3 consecutive failures
+
+  # ── FLASK APP REPLICA 2 ─────────────────────────────────────
+  app-2:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    environment:
+      - REPLICA_ID=app-2      # Different ID → different label in Grafana
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - lab-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── FLASK APP REPLICA 3 ─────────────────────────────────────
+  app-3:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    environment:
+      - REPLICA_ID=app-3
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - lab-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── NGINX LOAD BALANCER ─────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine  # Use official Nginx image (alpine = small)
+    ports:
+      - "${NGINX_PORT:-1225}:80"    # Port set by start.bat / start.sh (default 1225)
+                                    # Browser → localhost:${NGINX_PORT} → this container
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro   # Mount our config (read-only)
+      - ./ui:/usr/share/nginx/html:ro                 # Mount UI files as static content
+    depends_on:
+      - app-1
+      - app-2
+      - app-3                 # Wait for app containers to start before Nginx starts
+    networks:
+      - lab-network
+    restart: unless-stopped
+
+  # ── LOKI LOG DATABASE ────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.4   # Official Loki image
+    ports:
+      - "3100:3100"             # Expose for debugging (optional — only Promtail needs it)
+    volumes:
+      - ./loki/config.yaml:/etc/loki/local-config.yaml:ro   # Our config
+      - loki_data:/loki                                      # Persist log data
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - lab-network
+    restart: unless-stopped
+
+  # ── PROMTAIL LOG COLLECTOR ───────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.4   # Must match Loki version
+    volumes:
+      - ./promtail/config.yaml:/etc/promtail/config.yaml:ro   # Our config
+      - app_logs:/app/logs:ro                                  # Read app logs (read-only)
+      - /var/log:/var/log:ro                                   # Optional: host system logs
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki                  # Promtail needs Loki to be up before it can push logs
+    networks:
+      - lab-network
+    restart: unless-stopped
+
+  # ── GRAFANA DASHBOARD ────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2   # Official Grafana image
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"  # Port set by start.bat / start.sh (default 3000)
+                                      # Open http://localhost:${GRAFANA_PORT} in browser
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin       # Default login username
+      - GF_SECURITY_ADMIN_PASSWORD=admin   # Default login password
+      - GF_AUTH_ANONYMOUS_ENABLED=true     # Allow viewing without login (lab convenience)
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer  # Anonymous users get Viewer role
+    volumes:
+      - grafana_data:/var/lib/grafana                                    # Persist Grafana DB
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro              # Auto-configure datasources
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro              # Auto-load dashboards
+    depends_on:
+      - loki
+    networks:
+      - lab-network
+    restart: unless-stopped

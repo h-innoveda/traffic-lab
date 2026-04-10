@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────────────────────────
+# app-deployment.yaml — Flask App Deployment
+#
+# A Deployment tells Kubernetes:
+#   "Run 3 copies of this container. If one dies, restart it.
+#    If I update the image, roll it out gradually."
+#
+# DOCKER COMPOSE EQUIVALENT:
+#   app-1, app-2, app-3 services → ONE Deployment with replicas: 3
+#   K8s manages the 3 pods automatically (you don't name them individually)
+#
+# KEY CONCEPTS:
+#   Deployment → manages → ReplicaSet → manages → Pods
+#   Pod = smallest unit = one running container (or group of containers)
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: apps/v1     # Deployments are in the "apps" API group
+kind: Deployment
+metadata:
+  name: flask-app                # Name of this Deployment
+  namespace: traffic-lab         # Which namespace it lives in
+  labels:
+    app: flask-app               # Label for selecting this deployment
+
+spec:
+  # ── HOW MANY PODS ──────────────────────────────────────────
+  replicas: 3   # Run 3 identical pods
+                # EXPERIMENT: kubectl scale deployment flask-app --replicas=5 -n traffic-lab
+                # Watch Grafana pick up 2 new replica labels
+
+  # ── WHICH PODS THIS DEPLOYMENT MANAGES ─────────────────────
+  selector:
+    matchLabels:
+      app: flask-app   # Manage pods that have this label
+                       # Must match template.metadata.labels below
+
+  # ── ROLLING UPDATE STRATEGY ────────────────────────────────
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge:       1   # Allow 1 extra pod during update (4 pods briefly)
+      maxUnavailable: 0   # Never have fewer than 3 pods (zero downtime)
+      # This means: start new pod → wait for it to be ready → kill old pod → repeat
+
+  # ── POD TEMPLATE ───────────────────────────────────────────
+  # This is the blueprint for each pod K8s creates
+  template:
+    metadata:
+      labels:
+        app: flask-app   # MUST match selector.matchLabels above
+    
+    spec:
+      containers:
+        - name: flask-app
+          image: traffic-lab-app:latest   # Image built from app/Dockerfile
+                                          # In production: your-registry/app:v1.2.3
+          imagePullPolicy: Never          # Use local image (for local k8s like minikube)
+                                          # Change to "Always" for production
+          
+          ports:
+            - containerPort: 5000   # Flask listens on 5000
+          
+          # ── ENVIRONMENT VARIABLES ──────────────────────────
+          env:
+            - name: REPLICA_ID
+              # Use the pod's name as REPLICA_ID (unique per pod)
+              # valueFrom.fieldRef lets you inject pod metadata as env vars
+              # This is the K8s equivalent of REPLICA_ID=app-1 in docker-compose
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name   # e.g., "flask-app-7d9f8b-xk2p1"
+          
+          # ── RESOURCE LIMITS ────────────────────────────────
+          # Tell K8s how much CPU/RAM each pod needs.
+          # requests = minimum guaranteed
+          # limits   = maximum allowed (pod killed if exceeded)
+          resources:
+            requests:
+              memory: "64Mi"    # 64 megabytes minimum
+              cpu:    "100m"    # 100 millicores = 0.1 CPU core
+            limits:
+              memory: "128Mi"   # 128 megabytes maximum
+              cpu:    "200m"    # 200 millicores = 0.2 CPU core
+          
+          # ── HEALTH CHECKS ──────────────────────────────────
+          # K8s uses these to know if a pod is healthy.
+          
+          # livenessProbe: "Is the app alive? If not, restart it."
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10   # Wait 10s before first check (app needs time to start)
+            periodSeconds:       10   # Check every 10 seconds
+            failureThreshold:    3    # Restart after 3 consecutive failures
+          
+          # readinessProbe: "Is the app ready to receive traffic? If not, remove from load balancer."
+          # Different from liveness: a pod can be alive but not ready (e.g., warming up cache)
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds:       5
+            failureThreshold:    2
+          
+          # ── VOLUME MOUNTS ───────────────────────────────────
+          volumeMounts:
+            - name: app-logs
+              mountPath: /app/logs   # Where the app writes logs inside the container
+      
+      # ── VOLUMES ────────────────────────────────────────────
+      volumes:
+        - name: app-logs
+          emptyDir: {}   # Temporary directory, exists as long as pod lives
+                         # In production: use a PersistentVolumeClaim or
+                         # ship logs directly to Loki without files

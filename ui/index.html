@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Traffic Lab — Control Panel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── HEADER ──────────────────────────────────────────────── -->
+  <header>
+    <h1>🚦 Traffic Lab</h1>
+    <p class="subtitle">Send requests to Nginx → watch them appear in Grafana</p>
+    <!-- Live stats bar — updated by script.js every second -->
+    <div class="stats-bar">
+      <span class="stat">Total Sent: <strong id="total-count">0</strong></span>
+      <span class="stat success">✓ Success: <strong id="success-count">0</strong></span>
+      <span class="stat error">✗ Errors: <strong id="error-count">0</strong></span>
+      <span class="stat rate-limit">⚡ Rate Limited: <strong id="ratelimit-count">0</strong></span>
+      <span class="stat">Req/s: <strong id="rps">0</strong></span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── SECTION 1: TRAFFIC CONTROLS ─────────────────────── -->
+    <!--
+      These buttons send HTTP requests to Nginx (localhost:8085).
+      Nginx load-balances them to app-1, app-2, or app-3.
+      Each request generates a JSON log line.
+      Promtail ships those logs to Loki.
+      Grafana queries Loki and shows the data.
+      
+      EXPERIMENT: Open Grafana (localhost:3000) in another tab,
+      then click buttons here and watch the panels update in real time.
+    -->
+    <section class="card">
+      <h2>🎯 Traffic Controls</h2>
+      <p class="hint">Each button calls a different Flask endpoint. Watch Grafana update in real time.</p>
+
+      <div class="button-grid">
+
+        <!-- NORMAL TRAFFIC: calls /api/data — fast, 200 OK -->
+        <button class="btn btn-normal" onclick="sendRequest('/api/data', 'normal')">
+          <span class="btn-icon">📡</span>
+          <span class="btn-label">Normal Request</span>
+          <span class="btn-desc">/api/data — 5-50ms, 200 OK</span>
+        </button>
+
+        <!-- SLOW REQUEST: calls /api/slow — 1-3 second delay -->
+        <button class="btn btn-slow" onclick="sendRequest('/api/slow', 'slow')">
+          <span class="btn-icon">🐢</span>
+          <span class="btn-label">Slow Request</span>
+          <span class="btn-desc">/api/slow — 1-3 seconds</span>
+        </button>
+
+        <!-- FORCE ERROR: calls /api/error — always returns 500 -->
+        <button class="btn btn-error" onclick="sendRequest('/api/error', 'error')">
+          <span class="btn-icon">💥</span>
+          <span class="btn-label">Trigger Error</span>
+          <span class="btn-desc">/api/error — always 500</span>
+        </button>
+
+        <!-- RANDOM ERROR: 30% chance of 500 -->
+        <button class="btn btn-random" onclick="sendRequest('/api/random-error', 'random')">
+          <span class="btn-icon">🎲</span>
+          <span class="btn-label">Random Error</span>
+          <span class="btn-desc">/api/random-error — 30% fail</span>
+        </button>
+
+        <!-- CPU LOAD: burns CPU for ~200ms -->
+        <button class="btn btn-cpu" onclick="sendRequest('/api/cpu', 'cpu')">
+          <span class="btn-icon">🔥</span>
+          <span class="btn-label">CPU Load</span>
+          <span class="btn-desc">/api/cpu — compute intensive</span>
+        </button>
+
+        <!-- BURST: sends 5 sub-requests in one call -->
+        <button class="btn btn-burst" onclick="sendRequest('/api/burst', 'burst')">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-label">Burst Request</span>
+          <span class="btn-desc">/api/burst — 5 log lines</span>
+        </button>
+
+        <!-- REPLICA INFO: shows which replica responded -->
+        <button class="btn btn-info" onclick="sendRequest('/api/replica-info', 'info')">
+          <span class="btn-icon">🔍</span>
+          <span class="btn-label">Replica Info</span>
+          <span class="btn-desc">/api/replica-info — who answered?</span>
+        </button>
+
+        <!-- HEALTH CHECK: Nginx uses this internally -->
+        <button class="btn btn-health" onclick="sendRequest('/health', 'health')">
+          <span class="btn-icon">💚</span>
+          <span class="btn-label">Health Check</span>
+          <span class="btn-desc">/health — liveness probe</span>
+        </button>
+
+      </div>
+    </section>
+
+    <!-- ── SECTION 2: BURST TRAFFIC GENERATOR ───────────────── -->
+    <!--
+      This section auto-sends many requests to simulate real traffic.
+      Use the slider to control requests-per-second.
+      
+      EXPERIMENT: Set to 10 req/s, watch Grafana's "Requests Per Second"
+      panel show a flat line at 10. Then set to 25 req/s — watch it
+      hit the rate limit (20r/s in nginx.conf) and 429s appear.
+    -->
+    <section class="card">
+      <h2>🌊 Auto Traffic Generator</h2>
+      <p class="hint">Automatically sends requests at a set rate. Watch Grafana panels update live.</p>
+
+      <div class="generator-controls">
+
+        <!-- Rate slider: 1 to 30 requests per second -->
+        <div class="slider-group">
+          <label for="rate-slider">
+            Rate: <strong id="rate-display">5</strong> req/s
+          </label>
+          <input
+            type="range"
+            id="rate-slider"
+            min="1" max="30" value="5"
+            oninput="updateRate(this.value)"
+          />
+          <div class="slider-labels">
+            <span>1 req/s</span>
+            <span>↑ rate limit (20)</span>
+            <span>30 req/s</span>
+          </div>
+        </div>
+
+        <!-- Endpoint selector: which endpoint to hammer -->
+        <div class="select-group">
+          <label for="endpoint-select">Endpoint:</label>
+          <select id="endpoint-select">
+            <option value="/api/data">Normal (/api/data)</option>
+            <option value="/api/slow">Slow (/api/slow)</option>
+            <option value="/api/random-error">Random Error (30% fail)</option>
+            <option value="/api/cpu">CPU Load</option>
+            <option value="/api/burst">Burst</option>
+          </select>
+        </div>
+
+        <!-- Start/Stop buttons -->
+        <div class="generator-buttons">
+          <button class="btn btn-start" id="start-btn" onclick="startGenerator()">
+            ▶ Start Auto Traffic
+          </button>
+          <button class="btn btn-stop" id="stop-btn" onclick="stopGenerator()" disabled>
+            ■ Stop
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Visual indicator that generator is running -->
+      <div id="generator-status" class="generator-status hidden">
+        <span class="pulse"></span>
+        Sending <strong id="status-rate">5</strong> req/s to
+        <strong id="status-endpoint">/api/data</strong>
+      </div>
+
+    </section>
+
+    <!-- ── SECTION 3: RESPONSE LOG ───────────────────────────── -->
+    <!--
+      Shows the last 50 responses from the API.
+      Each row shows: timestamp, endpoint, status code, which replica responded, duration.
+      
+      This is the CLIENT-SIDE view. The SERVER-SIDE view is in Grafana.
+      Compare them — they should match.
+    -->
+    <section class="card">
+      <h2>📋 Response Log <button class="btn-clear" onclick="clearLog()">Clear</button></h2>
+      <p class="hint">Last 50 responses. Green = 200 OK, Orange = 429 rate limited, Red = 500 error.</p>
+
+      <div class="log-table-wrapper">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Endpoint</th>
+              <th>Status</th>
+              <th>Replica</th>
+              <th>Duration</th>
+              <th>Response</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody">
+            <!-- Rows inserted by script.js -->
+            <tr class="empty-row">
+              <td colspan="6">No requests yet — click a button above</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── SECTION 4: GRAFANA LINKS ──────────────────────────── -->
+    <!--
+      Quick links to the most useful Grafana views.
+      Open these in a new tab while using the control panel.
+    -->
+    <section class="card">
+      <h2>📊 Grafana Quick Links</h2>
+      <p class="hint">Open these in a new tab. Make sure Grafana is running on port 3000.</p>
+
+      <div class="grafana-links">
+
+        <a href="http://localhost:3000" target="_blank" class="grafana-link">
+          <span class="link-icon">🏠</span>
+          <span class="link-text">
+            <strong>Grafana Home</strong>
+            <small>Login: admin / admin</small>
+          </span>
+        </a>
+
+        <a href="http://localhost:3000/d/traffic-lab-main" target="_blank" class="grafana-link">
+          <span class="link-icon">📈</span>
+          <span class="link-text">
+            <strong>Traffic Dashboard</strong>
+            <small>All panels — requests, errors, replicas</small>
+          </span>
+        </a>
+
+        <a href="http://localhost:3000/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bapp%3D%5C%22traffic-lab%5C%22%7D%20%7C%20json%22%7D%5D%7D" target="_blank" class="grafana-link">
+          <span class="link-icon">🔍</span>
+          <span class="link-text">
+            <strong>Explore Logs</strong>
+            <small>Raw log stream — filter by any field</small>
+          </span>
+        </a>
+
+        <a href="http://localhost:3000/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bapp%3D%5C%22traffic-lab%5C%22%7D%20%7C%20json%20%7C%20status%20%3E%3D%20500%22%7D%5D%7D" target="_blank" class="grafana-link">
+          <span class="link-icon">🚨</span>
+          <span class="link-text">
+            <strong>Error Logs Only</strong>
+            <small>Filtered to status >= 500</small>
+          </span>
+        </a>
+
+      </div>
+    </section>
+
+    <!-- ── SECTION 5: EXPERIMENT GUIDE ──────────────────────── -->
+    <section class="card">
+      <h2>🧪 Experiments to Try</h2>
+      <ol class="experiment-list">
+        <li>
+          <strong>Load balancing:</strong> Click "Replica Info" 9 times.
+          You should see app-1, app-2, app-3 rotating in the Response Log.
+        </li>
+        <li>
+          <strong>Rate limiting:</strong> Set Auto Traffic to 25 req/s, click Start.
+          Watch 429 errors appear (Nginx limit is 20 req/s).
+        </li>
+        <li>
+          <strong>Error detection:</strong> Click "Trigger Error" 5 times.
+          Open Grafana → Error Logs panel → see them appear instantly.
+        </li>
+        <li>
+          <strong>Latency spike:</strong> Click "Slow Request" 3 times.
+          In Grafana Explore, run: <code>{app="traffic-lab"} | json | duration_ms > 1000</code>
+        </li>
+        <li>
+          <strong>Kill a replica:</strong> Run <code>docker compose stop app-3</code>.
+          Watch Grafana's "Active Replicas" drop from 3 to 2.
+          Traffic split changes from 33%/33%/33% to 50%/50%.
+        </li>
+        <li>
+          <strong>Scale up:</strong> Duplicate app-3 service as app-4 in docker-compose.yml.
+          Run <code>docker compose up -d app-4</code>.
+          Add <code>server app-4:5000;</code> to nginx.conf, reload Nginx.
+        </li>
+      </ol>
+    </section>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

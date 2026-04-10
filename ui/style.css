@@ -1,0 +1,488 @@
+/* ─────────────────────────────────────────────────────────────────
+   style.css — Traffic Lab Control Panel Styles
+   
+   Design philosophy: dark theme (easier on eyes during long sessions),
+   color-coded status (green=ok, orange=warning, red=error — same as Grafana).
+   ───────────────────────────────────────────────────────────────── */
+
+/* ── CSS VARIABLES ─────────────────────────────────────────── */
+/* Define colors once, use everywhere. Change one value = updates all. */
+:root {
+  --bg-primary:    #0f1117;   /* Main background — near black */
+  --bg-card:       #1a1d27;   /* Card background — slightly lighter */
+  --bg-card-hover: #1f2335;   /* Card hover state */
+  --border:        #2a2d3e;   /* Subtle borders */
+  
+  --text-primary:  #e2e8f0;   /* Main text — off-white */
+  --text-muted:    #64748b;   /* Secondary text — gray */
+  --text-hint:     #94a3b8;   /* Hint text */
+  
+  --green:   #22c55e;   /* Success / 200 OK */
+  --yellow:  #eab308;   /* Warning / slow */
+  --orange:  #f97316;   /* Rate limited / 429 */
+  --red:     #ef4444;   /* Error / 500 */
+  --blue:    #3b82f6;   /* Info / normal */
+  --purple:  #a855f7;   /* CPU / burst */
+  --cyan:    #06b6d4;   /* Replica info */
+  
+  --radius: 8px;
+  --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+}
+
+/* ── RESET & BASE ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+header {
+  background: linear-gradient(135deg, #1a1d27 0%, #0f1117 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 20px 32px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(10px);
+}
+
+header h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 2px;
+}
+
+/* ── STATS BAR ──────────────────────────────────────────────── */
+/* The live counter row at the top */
+.stats-bar {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.stat {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat strong {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums; /* Numbers don't shift layout when they change */
+}
+
+.stat.success strong { color: var(--green); }
+.stat.error   strong { color: var(--red); }
+.stat.rate-limit strong { color: var(--orange); }
+
+/* ── MAIN LAYOUT ────────────────────────────────────────────── */
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── CARDS ──────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint {
+  color: var(--text-hint);
+  font-size: 0.85rem;
+  margin-bottom: 20px;
+}
+
+/* ── BUTTON GRID ────────────────────────────────────────────── */
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+/* Base button style */
+.btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  gap: 4px;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+}
+
+.btn:active {
+  transform: translateY(0);
+  opacity: 0.8;
+}
+
+.btn-icon  { font-size: 1.4rem; }
+.btn-label { font-weight: 600; font-size: 0.9rem; }
+.btn-desc  { font-size: 0.75rem; color: var(--text-muted); }
+
+/* Color variants — each button type has its own accent color */
+.btn-normal  { border-color: var(--blue);   background: rgba(59,130,246,0.08); }
+.btn-normal:hover  { background: rgba(59,130,246,0.15); border-color: var(--blue); }
+
+.btn-slow    { border-color: var(--yellow); background: rgba(234,179,8,0.08); }
+.btn-slow:hover    { background: rgba(234,179,8,0.15); }
+
+.btn-error   { border-color: var(--red);    background: rgba(239,68,68,0.08); }
+.btn-error:hover   { background: rgba(239,68,68,0.15); }
+
+.btn-random  { border-color: var(--orange); background: rgba(249,115,22,0.08); }
+.btn-random:hover  { background: rgba(249,115,22,0.15); }
+
+.btn-cpu     { border-color: var(--purple); background: rgba(168,85,247,0.08); }
+.btn-cpu:hover     { background: rgba(168,85,247,0.15); }
+
+.btn-burst   { border-color: var(--orange); background: rgba(249,115,22,0.08); }
+.btn-burst:hover   { background: rgba(249,115,22,0.15); }
+
+.btn-info    { border-color: var(--cyan);   background: rgba(6,182,212,0.08); }
+.btn-info:hover    { background: rgba(6,182,212,0.15); }
+
+.btn-health  { border-color: var(--green);  background: rgba(34,197,94,0.08); }
+.btn-health:hover  { background: rgba(34,197,94,0.15); }
+
+/* ── GENERATOR CONTROLS ─────────────────────────────────────── */
+.generator-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-end;
+}
+
+.slider-group, .select-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.slider-group label, .select-group label {
+  font-size: 0.9rem;
+  color: var(--text-hint);
+}
+
+.slider-group label strong {
+  color: var(--blue);
+  font-size: 1.1rem;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--blue);
+  height: 6px;
+  cursor: pointer;
+}
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+select {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+select:focus { outline: 2px solid var(--blue); }
+
+.generator-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-start {
+  background: var(--green);
+  color: #000;
+  font-weight: 700;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.15s;
+}
+
+.btn-start:hover { opacity: 0.85; }
+.btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-stop {
+  background: var(--red);
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.15s;
+}
+
+.btn-stop:hover { opacity: 0.85; }
+.btn-stop:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── GENERATOR STATUS INDICATOR ─────────────────────────────── */
+.generator-status {
+  margin-top: 16px;
+  padding: 10px 16px;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.generator-status.hidden { display: none; }
+
+/* Pulsing green dot — shows generator is running */
+.pulse {
+  width: 10px;
+  height: 10px;
+  background: var(--green);
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ── LOG TABLE ──────────────────────────────────────────────── */
+.log-table-wrapper {
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.log-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  z-index: 1;
+}
+
+.log-table th {
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.log-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(42,45,62,0.5);
+  vertical-align: middle;
+}
+
+.log-table tr:hover td { background: var(--bg-card-hover); }
+
+/* Status badge colors */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.status-200 { background: rgba(34,197,94,0.15);  color: var(--green); }
+.status-429 { background: rgba(249,115,22,0.15); color: var(--orange); }
+.status-500 { background: rgba(239,68,68,0.15);  color: var(--red); }
+.status-err { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+/* Replica badge */
+.replica-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.replica-app-1 { background: rgba(59,130,246,0.15);  color: var(--blue); }
+.replica-app-2 { background: rgba(168,85,247,0.15);  color: var(--purple); }
+.replica-app-3 { background: rgba(6,182,212,0.15);   color: var(--cyan); }
+.replica-unknown { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+
+.empty-row td {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px;
+}
+
+.btn-clear {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  margin-left: 12px;
+  transition: all 0.15s;
+}
+
+.btn-clear:hover { border-color: var(--red); color: var(--red); }
+
+/* ── GRAFANA LINKS ───────────────────────────────────────────── */
+.grafana-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.grafana-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: all 0.15s;
+}
+
+.grafana-link:hover {
+  border-color: var(--orange);
+  background: rgba(249,115,22,0.05);
+  transform: translateY(-2px);
+}
+
+.link-icon { font-size: 1.5rem; }
+
+.link-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.link-text strong { font-size: 0.9rem; }
+.link-text small  { font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── EXPERIMENT LIST ─────────────────────────────────────────── */
+.experiment-list {
+  list-style: none;
+  counter-reset: exp-counter;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.experiment-list li {
+  counter-increment: exp-counter;
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.experiment-list li::before {
+  content: counter(exp-counter);
+  background: var(--blue);
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.experiment-list code {
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.2);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.82rem;
+  color: var(--blue);
+}
+
+/* ── RESPONSIVE ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  header { padding: 16px; }
+  main   { padding: 16px; }
+  .stats-bar { gap: 12px; }
+  .button-grid { grid-template-columns: repeat(2, 1fr); }
+  .generator-controls { flex-direction: column; }
+}

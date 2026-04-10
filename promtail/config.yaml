@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────────
+# promtail/config.yaml — Promtail log collector configuration
+#
+# Promtail is the "log shipper" — it watches log files and sends
+# them to Loki. Think of it as a tail -f that forwards to a database.
+#
+# DATA FLOW:
+#   /app/logs/app.log (inside app containers)
+#     → Promtail reads new lines
+#     → attaches labels (app, replica, env)
+#     → sends to Loki at http://loki:3100
+#     → Grafana queries Loki to show dashboards
+#
+# WHY LABELS MATTER:
+#   Labels are how you FILTER logs in Grafana.
+#   Without labels: you'd search ALL logs from ALL apps.
+#   With labels:    {app="traffic-lab", replica="app-2"} → only app-2 logs
+#   Loki indexes labels (not log content) → fast and cheap.
+# ─────────────────────────────────────────────────────────────────
+
+server:
+  # Promtail exposes its own HTTP server for health checks and metrics
+  http_listen_port: 9080
+  grpc_listen_port: 0   # 0 = disabled (we don't need gRPC)
+
+positions:
+  # Promtail tracks HOW FAR it has read each log file here.
+  # If Promtail restarts, it resumes from where it left off
+  # instead of re-sending all old logs.
+  filename: /tmp/positions.yaml
+
+clients:
+  # WHERE to send logs — Loki's push API endpoint
+  # "loki" resolves to the Loki container via Docker Compose DNS
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # ── JOB 1: Collect Flask app logs ──────────────────────────
+  - job_name: flask_app_logs
+    
+    static_configs:
+      - targets:
+          - localhost   # required field (legacy), not actually used for file tailing
+        
+        labels:
+          # These labels are ATTACHED to every log line from these files.
+          # In Grafana you'll query: {app="traffic-lab"}
+          app: traffic-lab
+          env: development
+          
+          # __path__ is special — it tells Promtail which file(s) to watch.
+          # * is a glob — matches app-1.log, app-2.log, app-3.log
+          # Each replica writes to its own file (set by REPLICA_ID env var in main.py)
+          __path__: /app/logs/*.log
+
+    # ── PIPELINE STAGES ──────────────────────────────────────
+    # Pipeline stages transform log lines BEFORE sending to Loki.
+    # Think of it as a processing pipeline: read → parse → label → send
+    pipeline_stages:
+
+      # STAGE 1: Parse the JSON log line
+      # Our Flask app writes JSON logs like:
+      #   {"level":"info","status":200,"replica":"app-1","duration_ms":12}
+      # This stage parses that JSON and makes fields available for next stages.
+      - json:
+          expressions:
+            level:       level        # extract "level" field from JSON
+            status:      status       # extract "status" field
+            replica:     replica      # extract "replica" field
+            duration_ms: duration_ms  # extract "duration_ms" field
+            path:        path         # extract "path" field
+
+      # STAGE 2: Promote extracted fields to Loki LABELS
+      # Labels are indexed by Loki → fast to filter on.
+      # WARNING: Don't make high-cardinality fields labels (like duration_ms)
+      #          because Loki creates an index entry per unique label value.
+      #          "replica" has 3 values = fine. "duration_ms" has 1000s = bad.
+      - labels:
+          level:    # {level="info"} or {level="error"} in Grafana
+          replica:  # {replica="app-1"} in Grafana
+          # status is NOT a label here — too many unique values (200, 404, 500...)
+          # Instead, query it with: | json | status >= 400
+
+      # STAGE 3: Set the log timestamp from the JSON field
+      # Without this, Loki uses the time Promtail received the log,
+      # which could be slightly different from when the app logged it.
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02 15:04:05,000"   # Go time format (yes, it's weird)
+          # If parsing fails, Promtail falls back to current time — that's fine.

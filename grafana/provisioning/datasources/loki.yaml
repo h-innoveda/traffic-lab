@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────
+# grafana/provisioning/datasources/loki.yaml
+#
+# "Provisioning" = configuring Grafana via files instead of clicking in the UI.
+#
+# WITHOUT this file:
+#   Every time you restart Grafana, you'd have to manually:
+#   1. Open Grafana → Configuration → Data Sources
+#   2. Click "Add data source"
+#   3. Select Loki
+#   4. Type in the URL
+#   5. Click Save & Test
+#
+# WITH this file:
+#   Grafana reads it on startup and auto-creates the connection.
+#   This is "Infrastructure as Code" — your config lives in Git,
+#   not in someone's browser session.
+#
+# KEY LEARNING: This is how real teams manage Grafana.
+# You commit datasource configs to Git → reproducible environments.
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: 1   # Grafana provisioning API version
+
+datasources:
+  - name: Loki                    # Display name in Grafana UI
+    type: loki                    # Plugin type (built into Grafana)
+    access: proxy                 # "proxy" = Grafana server calls Loki
+                                  # (vs "direct" = browser calls Loki directly)
+                                  # Always use proxy — browser can't reach internal Docker network
+    
+    url: http://loki:3100         # Loki's address inside Docker network
+                                  # "loki" = Docker Compose service name (auto DNS)
+                                  # 3100 = Loki's HTTP port
+    
+    isDefault: true               # Make this the default datasource
+                                  # So new panels auto-select Loki
+    
+    editable: true                # Allow editing in UI (useful for learning/debugging)
+    
+    jsonData:
+      maxLines: 1000              # Max log lines to return per query
+                                  # Increase if you need more history in Explore view
+      
+      timeout: 60                 # Query timeout in seconds
+                                  # Slow queries (large time ranges) need more time

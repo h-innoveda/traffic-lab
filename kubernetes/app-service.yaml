@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────
+# app-service.yaml — Flask App Service (internal DNS)
+#
+# A Service gives pods a stable network address.
+# Pods are ephemeral — they get new IPs when restarted.
+# A Service has a fixed DNS name that always points to healthy pods.
+#
+# DOCKER COMPOSE EQUIVALENT:
+#   In Compose, service names ARE the DNS names (app-1, app-2, app-3).
+#   In K8s, you need an explicit Service object.
+#   This Service is named "flask-app" → Nginx can reach it at flask-app:5000
+#
+# TYPE: ClusterIP (default)
+#   Only accessible INSIDE the cluster.
+#   Nginx (also inside cluster) can reach it.
+#   Your browser CANNOT reach it directly.
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-app          # DNS name: flask-app.traffic-lab.svc.cluster.local
+                           # Or just "flask-app" from within the same namespace
+  namespace: traffic-lab
+  labels:
+    app: flask-app
+
+spec:
+  # ── SELECTOR ───────────────────────────────────────────────
+  # Route traffic to pods with this label.
+  # K8s automatically load-balances across all matching pods.
+  # This is the K8s equivalent of Nginx's upstream block!
+  selector:
+    app: flask-app   # Matches the pods created by app-deployment.yaml
+  
+  # ── PORTS ──────────────────────────────────────────────────
+  ports:
+    - name:       http
+      protocol:   TCP
+      port:       5000   # Port the Service listens on (what Nginx connects to)
+      targetPort: 5000   # Port on the pod to forward to (Flask's port)
+  
+  # ── TYPE ───────────────────────────────────────────────────
+  type: ClusterIP   # Internal only — not exposed outside cluster
+                    # Options: ClusterIP, NodePort, LoadBalancer

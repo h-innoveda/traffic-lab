@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────────
+# grafana-deployment.yaml — Grafana + Service
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: traffic-lab
+  labels:
+    app: grafana
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: grafana
+
+  template:
+    metadata:
+      labels:
+        app: grafana
+    
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.2
+          
+          ports:
+            - containerPort: 3000
+          
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Viewer"
+          
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu:    "100m"
+            limits:
+              memory: "256Mi"
+              cpu:    "300m"
+          
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+      
+      volumes:
+        - name: grafana-storage
+          emptyDir: {}   # In production: PersistentVolumeClaim
+
+---
+# Grafana Service — NodePort so browser can access it
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: traffic-lab
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port:       3000
+      targetPort: 3000
+      nodePort:   30300   # Access at: http://localhost:30300
+  type: NodePort

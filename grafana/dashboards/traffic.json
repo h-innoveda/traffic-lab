@@ -1,0 +1,353 @@
+{
+  "__comment": "This JSON defines the entire Grafana dashboard. Every panel, query, and layout is here. Export from Grafana UI → paste here → commit to Git → dashboard survives restarts.",
+  "title": "Traffic Lab — Full Observability",
+  "uid": "traffic-lab-main",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "tags": ["traffic-lab", "nginx", "flask"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total Requests (last 30 min)",
+      "description": "Count of ALL log lines = total requests handled. Click a bar to filter the time range.",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({app=\"traffic-lab\"}[30m]))",
+        "legendFormat": "Total Requests"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Error Count (5xx)",
+      "description": "Number of 500 errors. Should be 0 in healthy system. Spikes when you click 'Trigger Error' in UI.",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({app=\"traffic-lab\"} | json | status >= 500 [30m]))",
+        "legendFormat": "5xx Errors"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Active Replicas",
+      "description": "How many unique replica labels have logged in the last 5 minutes. Kill a container → this drops.",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "count(count by (replica) (count_over_time({app=\"traffic-lab\"}[5m])))",
+        "legendFormat": "Active Replicas"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Rate Limit Hits (429s)",
+      "description": "429 = Too Many Requests. Nginx returns this when rate limit is exceeded. Experiment: lower rate limit to 2r/s.",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({app=\"traffic-lab\"} | json | status = 429 [30m]))",
+        "legendFormat": "429 Rate Limits"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Requests Per Second (by replica)",
+      "description": "Time series showing request rate per replica. Each colored line = one replica. Should be roughly equal with round-robin. Change to ip_hash → one line dominates.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (replica) (rate({app=\"traffic-lab\"} | json [1m]))",
+        "legendFormat": "{{replica}}"
+      }],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Request Rate by Endpoint",
+      "description": "Which endpoints are being called most. /api/data = normal traffic, /api/slow = slow requests, /api/error = error simulation.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (path) (rate({app=\"traffic-lab\"} | json [1m]))",
+        "legendFormat": "{{path}}"
+      }],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Response Status Distribution",
+      "description": "Pie chart of HTTP status codes. Green = 200 OK, Orange = 429 rate limited, Red = 500 errors. Healthy system = almost all green.",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({app=\"traffic-lab\"} | json | status = 200 [30m]))",
+          "legendFormat": "200 OK"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({app=\"traffic-lab\"} | json | status = 500 [30m]))",
+          "legendFormat": "500 Error"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({app=\"traffic-lab\"} | json | status = 429 [30m]))",
+          "legendFormat": "429 Rate Limited"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "legend": { "displayMode": "table", "placement": "right" }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Traffic Split by Replica (%)",
+      "description": "Bar gauge showing what % of traffic each replica handled. Should be ~33% each with round-robin. Kill app-3 → app-1 and app-2 each get ~50%.",
+      "type": "bargauge",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (replica) (count_over_time({app=\"traffic-lab\"} | json [30m])) / sum(count_over_time({app=\"traffic-lab\"} | json [30m])) * 100",
+        "legendFormat": "{{replica}}"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 40 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Error Rate Over Time",
+      "description": "% of requests that returned 5xx errors per minute. SRE golden signal: error rate. Alert threshold typically 1%. Spikes when you click 'Random Error' button.",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(rate({app=\"traffic-lab\"} | json | status >= 500 [1m])) / sum(rate({app=\"traffic-lab\"} | json [1m])) * 100",
+        "legendFormat": "Error Rate %"
+      }],
+      "options": {
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20
+          },
+          "color": { "fixedColor": "red", "mode": "fixed" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Live Log Stream",
+      "description": "Real-time log tail. Every line is a JSON log from Flask. Use the search bar to filter: type 'error' to see only errors, 'app-2' to see only replica 2.",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 10 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{app=\"traffic-lab\"} | json",
+        "legendFormat": ""
+      }],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Slow Requests (>500ms)",
+      "description": "Log lines where duration_ms > 500. These are your performance problems. In production, you'd alert on this. Triggered by /api/slow endpoint.",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 30, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{app=\"traffic-lab\"} | json | duration_ms > 500",
+        "legendFormat": ""
+      }],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Error Logs Only",
+      "description": "Only log lines with level=error or status>=500. This is your on-call view — what's broken right now?",
+      "type": "logs",
+      "gridPos": { "x": 12, "y": 30, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{app=\"traffic-lab\", level=\"ERROR\"} | json",
+        "legendFormat": ""
+      }],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 13,
+      "title": "Requests Per Minute (total)",
+      "description": "Overall throughput. Click 'Burst Traffic' in UI → watch this spike. This is the most fundamental metric in any web system.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 38, "w": 24, "h": 8 },
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(rate({app=\"traffic-lab\"} | json [1m])) * 60",
+        "legendFormat": "Requests/min"
+      }],
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 3,
+            "fillOpacity": 15,
+            "gradientMode": "opacity"
+          },
+          "color": { "fixedColor": "blue", "mode": "fixed" }
+        }
+      }
+    }
+  ]
+}

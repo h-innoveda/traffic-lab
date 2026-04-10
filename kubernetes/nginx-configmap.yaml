@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────
+# nginx-configmap.yaml — Nginx Config as a Kubernetes ConfigMap
+#
+# In Docker Compose, we bind-mount nginx/nginx.conf into the container:
+#   volumes:
+#     - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+#
+# In Kubernetes, you can't bind-mount local files.
+# Instead, you put the config in a ConfigMap and mount it as a file.
+#
+# ConfigMap = a K8s object that stores key-value config data.
+# The value can be a multi-line string (like a config file).
+#
+# BENEFIT: Config is stored in K8s (version controlled, auditable).
+# You can update it with: kubectl apply -f nginx-configmap.yaml
+# Then rolling-restart Nginx to pick up changes.
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config       # Referenced in nginx-deployment.yaml
+  namespace: traffic-lab
+
+data:
+  # The key "nginx.conf" becomes the filename when mounted as a volume.
+  # The value is the entire nginx.conf content.
+  # Note: in K8s, upstream uses the Service DNS name "flask-app"
+  # instead of "app-1", "app-2", "app-3" (K8s handles load balancing via Service)
+  nginx.conf: |
+    events {
+      worker_connections 1024;
+    }
+
+    http {
+      limit_req_zone $binary_remote_addr zone=api_limit:10m rate=20r/s;
+
+      server {
+        listen 80;
+        server_name _;
+
+        location / {
+          root  /usr/share/nginx/html;
+          index index.html;
+          try_files $uri $uri/ /index.html;
+        }
+
+        location ~ ^/(api|health) {
+          limit_req zone=api_limit burst=10 nodelay;
+
+          # In K8s: proxy to the Service, not individual pods.
+          # The Service (flask-app:5000) load-balances across all 3 pods.
+          proxy_pass http://flask-app:5000;
+
+          proxy_set_header X-Real-IP       $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header Host            $host;
+
+          proxy_connect_timeout 5s;
+          proxy_send_timeout    30s;
+          proxy_read_timeout    30s;
+
+          add_header Access-Control-Allow-Origin  *;
+          add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
+        }
+
+        error_page 429 /429.json;
+        location = /429.json {
+          internal;
+          return 429 '{"error":"rate_limit_exceeded"}';
+          add_header Content-Type application/json;
+        }
+      }
+    }

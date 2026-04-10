@@ -1,0 +1,110 @@
+# ─────────────────────────────────────────────────────────────────
+# promtail-daemonset.yaml — Promtail DaemonSet
+#
+# DaemonSet = "run exactly ONE pod on EVERY node in the cluster"
+#
+# WHY DAEMONSET FOR PROMTAIL?
+#   Logs are written to the NODE's filesystem (not shared storage).
+#   Each node has its own /var/log/pods/ directory.
+#   To collect ALL logs, you need one Promtail per node.
+#
+#   If you used a Deployment instead:
+#     - 3 nodes, 1 Promtail pod → only collects logs from 1 node
+#     - 3 nodes, 3 Promtail pods (Deployment) → might put 2 on same node
+#   DaemonSet guarantees exactly 1 per node.
+#
+# DOCKER COMPOSE EQUIVALENT:
+#   In Compose, there's only 1 "node" (your machine), so 1 Promtail is fine.
+#   In K8s with multiple nodes, DaemonSet is the right pattern.
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: apps/v1
+kind: DaemonSet   # Not Deployment — runs on every node
+metadata:
+  name: promtail
+  namespace: traffic-lab
+  labels:
+    app: promtail
+
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+
+  template:
+    metadata:
+      labels:
+        app: promtail
+    
+    spec:
+      # ── SERVICE ACCOUNT ──────────────────────────────────────
+      # Promtail needs permission to read pod metadata from K8s API
+      # (to auto-discover pod labels and attach them to logs)
+      serviceAccountName: promtail   # Created separately (RBAC)
+
+      # ── TOLERATIONS ──────────────────────────────────────────
+      # Allow Promtail to run on ALL nodes, including control-plane nodes
+      # (which normally reject workloads via "taints")
+      tolerations:
+        - key:    node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+          operator: Exists
+
+      containers:
+        - name: promtail
+          image: grafana/promtail:2.9.4
+          
+          args:
+            - -config.file=/etc/promtail/config.yaml
+          
+          # ── SECURITY CONTEXT ─────────────────────────────────
+          # Promtail needs to read log files owned by root
+          securityContext:
+            runAsUser:  0   # Run as root (needed to read /var/log)
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu:    "50m"
+            limits:
+              memory: "128Mi"
+              cpu:    "100m"
+          
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail/config.yaml
+              subPath: config.yaml
+            
+            # Mount the node's /var/log so Promtail can read pod logs
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            
+            # Mount /var/lib/docker/containers for Docker log files
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            
+            # Positions file — where Promtail tracks read progress
+            - name: positions
+              mountPath: /tmp
+      
+      volumes:
+        - name: config
+          configMap:
+            name: promtail-config
+        
+        # hostPath volumes mount directories from the NODE's filesystem
+        # This is how Promtail reads logs that live on the node
+        - name: varlog
+          hostPath:
+            path: /var/log
+        
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        
+        - name: positions
+          emptyDir: {}

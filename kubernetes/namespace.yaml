@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────────
+# namespace.yaml — Kubernetes Namespace
+#
+# A Namespace is a virtual cluster inside your real cluster.
+# It isolates resources so "traffic-lab" objects don't clash
+# with other projects running in the same cluster.
+#
+# WHY NAMESPACES?
+#   Without: all your pods/services are in "default" namespace
+#            → hard to tell which belong to which project
+#   With:    kubectl get pods -n traffic-lab → only THIS project's pods
+#
+# ANALOGY: Like a folder on your filesystem.
+#   /projects/traffic-lab/ vs /projects/other-app/
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: v1        # Core Kubernetes API (v1 = stable)
+kind: Namespace       # What we're creating
+metadata:
+  name: traffic-lab   # The namespace name — used in every other k8s file
+  labels:
+    project: traffic-lab   # Labels help with filtering: kubectl get ns -l project=traffic-lab

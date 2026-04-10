@@ -1,0 +1,8 @@
+# Python dependencies for the Flask app
+# Pin versions so the build is reproducible — same image every time
+
+flask==3.0.3          # Web framework — handles HTTP routing
+flask-cors==4.0.1     # Allows the UI (port 80) to call the API (port 5000)
+                      # Without this, browsers block cross-origin requests (CORS policy)
+gunicorn==22.0.0      # Production WSGI server — replaces Flask's built-in dev server
+                      # Flask's dev server is single-threaded; gunicorn handles concurrent requests

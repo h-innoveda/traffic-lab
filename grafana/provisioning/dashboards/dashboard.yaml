@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────
+# grafana/provisioning/dashboards/dashboard.yaml
+#
+# This file tells Grafana WHERE to find dashboard JSON files.
+# It's a "pointer" — it doesn't contain the dashboard itself.
+#
+# The actual dashboard is in: grafana/dashboards/traffic.json
+#
+# HOW IT WORKS:
+#   1. Grafana starts up
+#   2. Reads this file → "look in /var/lib/grafana/dashboards for JSON files"
+#   3. Loads traffic.json → creates the dashboard automatically
+#   4. Dashboard survives container restarts (it's in a file, not in DB)
+#
+# WITHOUT provisioning:
+#   Build dashboard in UI → restart container → dashboard is GONE
+#   (Grafana stores dashboards in SQLite by default, which is in the container)
+#
+# WITH provisioning:
+#   Dashboard is in a file → mounted into container → always there
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: 1
+
+providers:
+  - name: traffic-lab-dashboards    # Internal name for this provider
+    orgId: 1                        # Grafana org ID (1 = default org)
+    type: file                      # Load dashboards from filesystem
+    disableDeletion: false          # Allow deleting dashboards from UI
+    updateIntervalSeconds: 30       # Re-scan folder every 30s for new/changed JSON files
+                                    # Useful during development — edit JSON, Grafana auto-reloads
+    allowUiUpdates: true            # Allow editing dashboards in UI
+                                    # Changes won't persist unless you export JSON back to file
+    options:
+      path: /var/lib/grafana/dashboards   # Where to look for dashboard JSON files
+                                          # This path is mounted via Docker volume
+      foldersFromFilesStructure: false    # Don't create folders from subdirectory names
