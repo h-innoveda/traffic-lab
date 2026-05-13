@@ -1,0 +1,4 @@
+This is a test file for learning Git commands.
+Line 2: Adding some content.
+Line 3: More content to update later.
+Line 4: Updated content for Git demo.
